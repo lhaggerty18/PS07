@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 07"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Luke Haggerty"
 date: "2017-10-24"
 output:
   html_document:
@@ -22,6 +22,7 @@ set.seed(76)
 library(tidyverse)
 library(broom)
 library(knitr)
+library(ROCR)
 
 train <- read_csv("data/cs-training.csv") %>% 
   rename(Id = X1)
@@ -36,7 +37,7 @@ Information on the competition can be found [here](https://www.kaggle.com/c/Give
 
 # Collaboration
 
-Please indicate who you collaborated with on this assignment: 
+Please indicate who you collaborated with on this assignment: I worked individually.
 
 
 
@@ -46,19 +47,63 @@ Build the binary classifier based on a single predictor variable: `DebtRatio`,
 `age`, or `MonthlyIncome`. Justify this choice.
 
 ```{r}
+ggplot( data = train, aes(x = age)) + geom_histogram(binwidth = 4.4)
+summary(train$age)
+
+ggplot( data = train, aes(x = DebtRatio)) + geom_histogram(binwidth = 3300)
+summary(train$DebtRatio)
+
+ggplot( data = train, aes(x = MonthlyIncome)) + geom_histogram(binwidth = 30000)
+summary(train$MonthlyIncome)
 
 ```
 
+I examined the three variables with histograms and five number summaries. Both MonthlyIncome and DebtRatio are highly skewed. I decided to use age because it is more normally distributed.
 
+
+```{r}
+model_logistic <- glm(SeriousDlqin2yrs ~age,family=binomial, data=train)
+
+log_odds_hat <- predict(model_logistic, newdata=test)
+p_hat <- 1/(1 + exp(-log_odds_hat))
+
+fitted_model <- model_logistic %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+predictions <- model_logistic %>% 
+  broom::augment(newdata=test) %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+
+ggplot(NULL) +
+  geom_line(data=fitted_model, aes(x=age, y=.fitted), col="blue") +
+  geom_point(data=predictions, aes(x=age, y=.fitted), col="red")
+```
 
 # ROC curve
 
 Based on the ultimate classifier you choose, plot a corresponding ROC curve.
 
 ```{r}
+train_augmented <- model_logistic %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
 
+pred <- prediction(predictions = train_augmented$p_hat, labels = train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
+
+auc <- as.numeric(performance(pred,"auc")@y.values)
+auc
+
+plot(perf, main=paste("Area Under the Curve =", round(auc, 3)))
+abline(c(0, 1), lty=2)
 ```
 
+```{r}
+submission$Probability <- p_hat
+write.csv(submission, "submission.csv", row.names = FALSE)
+```
 
 
 # ROC curve for random guessing
@@ -67,5 +112,11 @@ Instead of using any predictor information as you did above, switch your
 predictions to random guesses and plot the resulting ROC curve.
 
 ```{r}
+rand<-runif(150000,0,1)
 
+predr <- prediction(rand, labels = train_augmented$SeriousDlqin2yrs)
+perfr <- performance(pred, "tpr","fpr")
+
+plot(perfr, main=paste("Area Under the Curve =", round(auc, 3)))
+abline(c(0, 1), lty=2)
 ```
